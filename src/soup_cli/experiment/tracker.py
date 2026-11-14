@@ -571,12 +571,18 @@ class ExperimentTracker:
             run["exit_code"] = None
         return run
 
-    def list_runs(self, limit: int = 50) -> list[dict]:
+    def list_runs(self, limit: Optional[int] = 50) -> list[dict]:
         """Return list of runs ordered by created_at desc."""
         conn = self._get_conn()
-        rows = conn.execute(
-            "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)
-        ).fetchall()
+        if limit is None:
+            rows = conn.execute(
+                "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [self._reconcile_orphaned_run(dict(row)) for row in rows]
 
     def list_active_execution_runs(self) -> list[dict]:

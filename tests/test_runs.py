@@ -275,3 +275,63 @@ def test_runs_clean_with_data(tracker, tmp_path):
         import shutil
         if out_dir.exists():
             shutil.rmtree(out_dir)
+
+
+def _record_completed_run(tracker: ExperimentTracker, run_id: str, output_dir: Path) -> None:
+    """Record a completed run anchored at ``output_dir``."""
+    tracker.start_run(
+        config_dict={"base": "test-model", "task": "sft"},
+        device="cpu",
+        device_name="CPU",
+        gpu_info={},
+        run_id=run_id,
+    )
+    tracker.finish_run(
+        run_id=run_id,
+        initial_loss=1.0,
+        final_loss=0.5,
+        total_steps=10,
+        duration_secs=1.0,
+        output_dir=str(output_dir),
+    )
+
+
+def test_runs_cwd_only_applies_limit_after_cwd_filter(tracker, tmp_path, monkeypatch):
+    """#2825: newer runs outside cwd must not push cwd runs past --limit."""
+    proj = tmp_path / "proj"
+    elsewhere = tmp_path / "elsewhere"
+    (proj / "output").mkdir(parents=True)
+    (elsewhere / "output").mkdir(parents=True)
+
+    _record_completed_run(tracker, "proj_run", proj / "output")
+    for idx in range(3):
+        _record_completed_run(tracker, f"other_{idx}", elsewhere / "output")
+
+    monkeypatch.chdir(proj)
+    for limit in ("3", "1"):
+        result = runner.invoke(app, ["runs", "--cwd-only", "--limit", limit])
+        assert result.exit_code == 0, (result.output, repr(result.exception))
+        assert "No runs found" not in result.output
+        assert "proj_run" in result.output
+        for idx in range(3):
+            assert f"other_{idx}" not in result.output
+
+
+def test_runs_cwd_only_respects_limit_among_matching_runs(tracker, tmp_path, monkeypatch):
+    """#2825: --limit still caps the matching cwd runs after filtering."""
+    proj = tmp_path / "proj"
+    elsewhere = tmp_path / "elsewhere"
+    (proj / "output").mkdir(parents=True)
+    (elsewhere / "output").mkdir(parents=True)
+
+    _record_completed_run(tracker, "older_proj", proj / "output")
+    _record_completed_run(tracker, "newer_proj", proj / "output")
+    for idx in range(2):
+        _record_completed_run(tracker, f"other_{idx}", elsewhere / "output")
+
+    monkeypatch.chdir(proj)
+    result = runner.invoke(app, ["runs", "--cwd-only", "--limit", "1"])
+    assert result.exit_code == 0, (result.output, repr(result.exception))
+    assert "newer_proj" in result.output
+    assert "older_proj" not in result.output
+    assert "other_0" not in result.output

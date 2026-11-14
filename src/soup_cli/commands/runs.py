@@ -90,9 +90,14 @@ def list_runs(
     from soup_cli.experiment.tracker import ExperimentTracker
 
     tracker = ExperimentTracker()
-    runs = tracker.list_runs(limit=limit)
     if cwd_only:
-        runs = _filter_runs_by_cwd(runs, os.getcwd())
+        runs = (
+            _filter_runs_by_cwd(tracker.list_runs(limit=None), os.getcwd())[:limit]
+            if limit > 0
+            else []
+        )
+    else:
+        runs = tracker.list_runs(limit=limit)
 
     if not runs:
         console.print("[dim]No runs found. Train a model with:[/] [bold]soup train[/]")

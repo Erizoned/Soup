@@ -2,11 +2,13 @@
 
 import json
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from typer.testing import CliRunner
 
 from soup_cli.cli import app
 from soup_cli.commands.push import _format_size, _generate_model_card
+from tests.conftest import strip_ansi
 
 runner = CliRunner()
 
@@ -129,3 +131,37 @@ def test_push_no_token(tmp_path: Path, monkeypatch):
     )
     assert result.exit_code == 1
     assert "token" in result.output.lower()
+
+
+def test_push_invalid_collection_slug_rejected_before_upload(tmp_path: Path, monkeypatch):
+    """#2824: bad --collection slug must exit 1 before creating repo or uploading."""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("HF_TOKEN", "hf_test_token")
+
+    adapter_dir = tmp_path / "adapter"
+    adapter_dir.mkdir()
+    (adapter_dir / "adapter_config.json").write_text("{}", encoding="utf-8")
+    (adapter_dir / "adapter_model.safetensors").write_text("fake", encoding="utf-8")
+
+    fake_api = MagicMock()
+    get_api_mock = MagicMock(return_value=fake_api)
+    add_collection_mock = MagicMock()
+    monkeypatch.setattr("soup_cli.utils.hf.get_hf_api", get_api_mock)
+    monkeypatch.setattr("soup_cli.utils.hf.add_to_collection", add_collection_mock)
+
+    result = runner.invoke(
+        app,
+        [
+            "push",
+            "--model", str(adapter_dir),
+            "--repo", "user/model",
+            "--collection", "not a slug!",
+        ],
+    )
+    assert result.exit_code == 1
+    assert "Invalid --collection slug:" in strip_ansi(result.output)
+    assert get_api_mock.call_count == 0
+    assert fake_api.create_repo.call_count == 0
+    assert fake_api.upload_folder.call_count == 0
+    assert fake_api.upload_file.call_count == 0
+    assert add_collection_mock.call_count == 0

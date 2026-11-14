@@ -138,13 +138,28 @@ def push(
         raise typer.Exit(1)
 
     # --- Resolve HF token (env > cached login, see utils.hf.resolve_token) ---
-    from soup_cli.utils.hf import resolve_endpoint, resolve_token, validate_repo_id
+    from soup_cli.utils.hf import (
+        resolve_endpoint,
+        resolve_token,
+        validate_collection_slug,
+        validate_repo_id,
+    )
 
     try:
         validate_repo_id(repo)
     except ValueError as exc:
         console.print(f"[red]Invalid --repo:[/] {for_terminal(exc)}", emoji=False)
         raise typer.Exit(1) from exc
+
+    if hub_canonical == "hf" and collection:
+        try:
+            validate_collection_slug(collection)
+        except ValueError as exc:
+            console.print(
+                f"[red]Invalid --collection slug:[/] {for_terminal(exc)}",
+                emoji=False,
+            )
+            raise typer.Exit(1) from exc
 
     hub_token: Optional[str] = None
     hf_token: Optional[str] = None
@@ -303,31 +318,14 @@ def push(
 
     # --- Optional: add to Collection ---
     if collection:
-        from soup_cli.utils.hf import (
-            add_to_collection,
-            validate_collection_slug,
-        )
-        from soup_cli.utils.hf import (
-            resolve_endpoint as _resolve_endpoint,
-        )
+        from soup_cli.utils.hf import add_to_collection
 
-        try:
-            validate_collection_slug(collection)
-        except ValueError as exc:
-            console.print(f"[red]Invalid --collection slug:[/] {for_terminal(exc)}", emoji=False)
-            raise typer.Exit(1) from exc
-
-        try:
-            endpoint = _resolve_endpoint()
-        except ValueError as exc:
-            console.print(f"[red]Collection: {for_terminal(exc)}[/]", emoji=False)
-            raise typer.Exit(1) from exc
         try:
             add_to_collection(
                 collection_slug=collection,
                 repo_id=repo,
                 token=hf_token,
-                endpoint=endpoint,
+                endpoint=hf_endpoint,
                 item_type="model",
             )
             console.print(f"[green]Added to collection:[/] {for_terminal(collection)}", emoji=False)
